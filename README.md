@@ -1,2 +1,2 @@
-# banana.py-
-Easily connect to databases
+# banana.py 🍌
+Easily connection to databases 
