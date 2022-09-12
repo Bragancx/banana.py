@@ -29,9 +29,8 @@ class Banana:
 			print("Already disconnected")
 		else:
 			try:
-				self.__banana_connection.close()
+				self.__banana_connection = None
 				print("Connection closed")
-				__banana_connection = None
 			except Exception as e:
 				print("ERROR. Can't close connection")
 				print(e)
@@ -60,10 +59,21 @@ class Banana:
 
 		# Finish the connection
 		def disconnect(self) -> Banana:
-			self.__database_cursor.close()
-			return self.__parent.disconnect()
+			try:
+				self.__database_cursor.close()
+				self.__database_connection.close()
+				print("Connection closed")
+			except Exception as e:
+				print("ERROR. Can't close connection")
+				print(e)
+				return None
+			return self.__parent
 
 		# Table methods
+		def table(self, table) -> __BananaConnection:
+			self.table = table
+			return self
+
 		def set_table(self,table) -> __BananaConnection:
 			self.table = table
 			return self
@@ -71,22 +81,23 @@ class Banana:
 		def get_table(self) -> str:
 			return self.table
 
-
 		# Essencial methods
 		def select(self, *columns) -> __BananaConnection:
 			self.__operation_type = "SELECT"
 			self.__select.extend(columns)
 			return self
 
-		def insert(self, value : dict) -> __BananaConnection:
+		def insert(self, values : dict) -> __BananaConnection:
 			self.__operation_type = "INSERT"
+			for key in values:
+
 			return self
 		
-		def update(self, value : dict) -> __BananaConnection:
+		def update(self, values : dict) -> __BananaConnection:
 			self.__operation_type = "UPDATE"
 			return self
 
-		def delete(self, value) -> __BananaConnection:
+		def delete(self, values) -> __BananaConnection:
 			self.__operation_type = "DELETE"
 			return self
 
