@@ -1,135 +1,205 @@
 from __future__ import annotations
 import sqlite3
+from types import NoneType
 import psycopg2
+
+def tuple_to_string(data : tuple):
+	return '", "'.join(data)
+
 
 class Banana:
 
-	__banana_connection = None
+	__database_connection = None
+	__database_cursor = None
 
-	# Show that started ok
-	def __init__(self) -> None:
-		print("Banana initialized")
+	__table = ""
 
-	# Start the connection
-	def connect(self, host : str, database : str, username : str, password : str) -> __BananaConnection:
+	def __gen_function(self,table):
+		def BananaTable():
+			self.__table = table
+			return self.__BananaTableConnection(self.__database_cursor,self.__table)
+		return BananaTable
+
+	# Starts
+	def __init__(self, connection = {}, configs = {}) -> None:
+
+		# Check parameters
+		if not ({'host', 'database', 'username', 'password'} <= connection.keys()):
+			raise Exception ("Is missing parameters in the connection settings.")
+		if ('port' not in connection): connection["port"] = 5432
+
+		# Connect
 		try:
-			conn = psycopg2.connect(host=host, dbname=database, user=username, password=password)
-			self.__banana_connection = self.__BananaConnection(self,conn)
-			print("Connected successfully!")
-			del conn
+			self.__database_connection = psycopg2.connect(host=connection["host"], dbname=connection["database"], user=connection["username"], password=connection["password"], port=connection["port"])
 		except Exception as e:
-			print("ERROR. Can't connect to the database")
+			self.__database_connection = self.__database_connection.close()
+			print("ERROR. Can't connect to the database!")
 			print(e)
-		finally:
-			return self.__banana_connection
+			return self
+		
+		# Generate table functions
+		try:
+			self.__database_cursor = self.__database_connection.cursor()
+			self.__database_cursor.execute("SELECT DISTINCT table_name FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name")
+
+			for row in self.__database_cursor.fetchall():
+				setattr(self,row[0].title().replace('_',''),self.__gen_function(row[0]))
+		except Exception as e:
+			print("ERROR. Can't generate schemas (can be ghosts?)")
+			print(e)
+		print("Banana started!")
 
 	# Finish the connection
-	def disconnect(self) -> Banana:
-		if self.__banana_connection == None:
-			print("Already disconnected")
+	def close(self) -> Banana:
+		if self.__database_connection == None:
+			print("Already disconnected! What do you want from me?!!")
 		else:
 			try:
-				self.__banana_connection = None
-				print("Connection closed")
+				
+				self.__database_cursor = self.__database_cursor.close()
+				self.__database_connection = self.__database_connection.close()
+				print("Connection closed!")
 			except Exception as e:
-				print("ERROR. Can't close connection")
+				print("ERROR. Can't close connection!")
 				print(e)
 				return None
 		return self
 
-	class __BananaConnection:
+	def commit(self) -> Banana:
+		self.__database_connection.commit()
+		return self
+	
+	class __BananaTableConnection:
 
-		__database_connection = None
-		__database_cursor = None
+		__cursor = None
+		__table = ""
 
-		__operation_type = ""
-		__select = []
-		__where = []
+		__data = {
+			"method": "",
+			"data": None,
+			"where": None,
+			"order": None
+		}
 
-		table = ""
+		def __init__(self, cursor, table) -> None:
+			self.__cursor = cursor
+			self.__table = table
 
-		def __init__(self, parent : Banana, connection) -> None:
-			self.__parent = parent
-			self.__database_connection = connection
-			self.__database_cursor = connection.cursor()
-			print("BananaConnection initialized")
-
-		def connect(self, *args) -> __BananaConnection:
-			print("Already connected")
-
-		# Finish the connection
-		def disconnect(self) -> Banana:
-			try:
-				self.__database_cursor.close()
-				self.__database_connection.close()
-				print("Connection closed")
-			except Exception as e:
-				print("ERROR. Can't close connection")
-				print(e)
-				return None
-			return self.__parent
-
-		# Table methods
-		def table(self, table) -> __BananaConnection:
-			self.table = table
+		#  Query methods
+		def select(self, *columns) -> __BananaTableConnection:
+			self.__data["method"] = "SELECT"
+			self.__data["data"] = columns
 			return self
 
-		def set_table(self,table) -> __BananaConnection:
-			self.table = table
-			return self
-			
-		def get_table(self) -> str:
-			return self.table
-
-		# Essencial methods
-		def select(self, *columns) -> __BananaConnection:
-			self.__operation_type = "SELECT"
-			self.__select.extend(columns)
-			return self
-
-		def insert(self, values : dict) -> __BananaConnection:
-			self.__operation_type = "INSERT"
-			for key in values:
-
+		def insert(self, values : dict) -> __BananaTableConnection:
+			self.__data["method"] = "INSERT"
+			self.__data["data"] = values
 			return self
 		
-		def update(self, values : dict) -> __BananaConnection:
-			self.__operation_type = "UPDATE"
+		def update(self, values : dict) -> __BananaTableConnection:
+			self.__data["method"] = "UPDATE"
+			self.__data["data"] = values
 			return self
 
-		def delete(self, values) -> __BananaConnection:
-			self.__operation_type = "DELETE"
+		def delete(self, *ids : str) -> __BananaTableConnection:
+			self.__data["method"] = "DELETE"
+			self.__data["data"] = ids
 			return self
 
+		# Other methods
 
-		def where(self, *conditions : str or list) -> __BananaConnection:
-			for con in conditions:
-				self.__where.append(con)
+		def find(self, id : int) -> __BananaTableConnection:
+			self.__data["method"] = "FIND"
+			self.__data["data"] = id
 			return self
+
+		# Optional methods
+
+		def where(self, *conditions : str) -> __BananaTableConnection:
+			self.__data["where"] = conditions
+			return self
+
+		def order(self, *conditions : str) -> __BananaTableConnection:
+			self._data["order"] = conditions
+
+		def reset(self) -> None:
+			self.__data = {
+				"method": "",
+				"data": None,
+				"where": None,
+				"order": None
+			}
 
 		def execute(self) -> list:
-			string_query = ""
-
-			match self.__operation_type:
-				case "SELECT":
-					string_query = "SELECT $select$ FROM $table$"
-					
-					# REPLACES
-					string_query = string_query.replace("$select$", '"' + '", "'.join(self.__select) + '"')
-					string_query = string_query.replace("$table$",self.table)
-					
-					# WHERE CONDITION
-					if self.__where != []: string_query += " WHERE $where$".replace("$where$"," and ".join(self.__where))
-				
-				case "INSERT":
-					pass
+			_query = ""
 			
+			if self.__data["method"] == "": _query = self.__select()
+			if self.__data["method"] == "SELECT": _query = self.__select()
+			if self.__data["method"] == "INSERT": _query = self.__insert()
+			if self.__data["method"] == "UPDATE": _query = self.__update()
+			if self.__data["method"] == "DELETE": _query = self.__delete()
+			if self.__data["method"] == "FIND": _query = "SELECT * FROM %s WHERE id = %s" % (self.__table, self.__data["data"])
+
+			if _query == "":
+				print("ERROR. Please check your query and try again!")
+				print(_query)
+				return []
 			try:
-				print(string_query)
-				self.__database_cursor.execute(string_query)
-				print("Query successfully executed")
+				self.__cursor.execute(_query)
 			except Exception as e:
 				print("ERROR. Can't execute this query")
 				print(e)
-			else:
-				return self.__database_cursor.fetchall()
+				return []
+
+			self.reset()
+			return self.__cursor.fetchall()
+
+
+		def __select(self) -> str:
+			query = "SELECT * FROM %s" % (self.__table)
+			return self.__conditions(query)
+
+		def __insert(self) -> str:
+			_columns = []
+			_values = []
+			for key in self.__data["data"].keys():
+				_columns.append(str(key))
+				_values.append( self.__formatter(self.__data["data"][key]) )
+
+			query = "INSERT INTO %s(\"%s\") VALUES (%s)" % (self.__table, '", "'.join(_columns), ", ".join(_values))
+			return self.__conditions(query) + " RETURNING id"
+		
+		def __update(self) -> str:
+			arr = []
+			for key in self.__data["data"].keys():
+				subdata = '"' + str(key) + '" = '
+				subdata += self.__formatter(self.__data["data"][key])
+				arr.append( subdata )
+
+			query = "UPDATE %s SET %s" % ( self.__table, ", ".join(arr) )
+			return self.__conditions(query) + " RETURNING id"
+		
+		def __delete(self) -> str:
+			return "DELETE FROM %s WHERE id in (%s) RETURNING id" % (
+				self.__table,
+				", ".join(str(v) for v in self.__data["data"])
+			)
+
+
+
+		def __conditions(self,query) -> str:
+			# WHERE
+			if self.__data["where"] != None:
+				query += " WHERE %s" % (" and ".join( self.__data["where"] )).replace("'","''")
+			
+			print("order:",type(self.__data["order"]) is None)
+			# ORDER
+			if self.__data["order"] != None:
+				query += " ORDER BY %s" % (", ".join( self.__data["order"] )).replace("'","''")
+			
+			return query
+		
+		def __formatter(self,value) -> str:
+			if (type(value) is str):
+				return ("'%s'" % value)
+			return str(value)
